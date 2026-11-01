@@ -1,0 +1,16 @@
+{
+  "name": "shardfall-arena-server",
+  "version": "9.0.0",
+  "private": true,
+  "description": "Authoritative Socket.IO multiplayer server for Shardfall Arena",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
