@@ -30,7 +30,7 @@
   layer.innerHTML = `<section id="sfNetCard" dir="rtl" role="dialog" aria-modal="true" aria-labelledby="sfNetTitle">
     <button id="sfNetClose" aria-label="إغلاق">×</button><div style="color:#66e6df;font-size:11px;font-weight:900;letter-spacing:2px">SHARDFALL • ONLINE ARENA</div>
     <h2 id="sfNetTitle">ادخل ساحة المنافسة</h2><p>مواجهة مباشرة، غرف خاصة برمز قصير، ودردشة سريعة برسائل جاهزة.</p>
-    <label class="sfNetField">عنوان الخادم<input id="sfNetUrl" inputmode="url" placeholder="http://localhost:3000" autocomplete="url"></label>
+    <label class="sfNetField">عنوان الخادم<input id="sfNetUrl" inputmode="url" placeholder="https://shardfall-arena-online-1442049182.onrender.com" autocomplete="url"></label>
     <label class="sfNetField">اسم المقاتل<input id="sfNetName" maxlength="20" placeholder="مقاتل" autocomplete="nickname"></label>
     <label class="sfNetField">رمز الغرفة الخاصة (اختياري)<input id="sfNetCode" maxlength="5" placeholder="مثال: F7K2Q" autocapitalize="characters"></label>
     <div class="sfNetRow"><button id="sfNetPlay">⚡ ابحث عن مباراة</button><button id="sfNetJoin" class="secondary">🔑 دخول الغرفة</button></div>
@@ -60,7 +60,7 @@
 
   function getBase() {
     let value = q('#sfNetUrl').value.trim();
-    if (!value) value = /^https?:$/.test(location.protocol) ? location.origin : 'http://localhost:3000';
+    if (!value) value = /^https?:$/.test(location.protocol) ? 'https://shardfall-arena-online-1442049182.onrender.com' : 'http://localhost:3000';
     if (!/^https?:\/\//i.test(value)) value = 'http://' + value;
     return value.replace(/\/$/, '');
   }
