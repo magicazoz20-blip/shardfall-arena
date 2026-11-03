@@ -6,6 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const express = require('express');
 const { Server } = require('socket.io');
+const { createCoopService } = require('./squad-coop');
 
 try {
   const envText = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
@@ -36,7 +37,8 @@ const HEROES = {
   prism: { hp: 105, speed: 6.1, damage: 18, cooldown: 0.72, range: 13 },
   warden: { hp: 155, speed: 4.9, damage: 18, cooldown: 0.72, range: 12 },
   ember: { hp: 112, speed: 5.7, damage: 25, cooldown: 0.56, range: 10.5 },
-  rift: { hp: 88, speed: 6.7, damage: 23, cooldown: 0.48, range: 8.5 }
+  rift: { hp: 88, speed: 6.7, damage: 23, cooldown: 0.48, range: 8.5 },
+  madar: { hp: 118, speed: 5.35, damage: 18, cooldown: 0.68, range: 13 }
 };
 const EMOTES = {
   gg: 'لعب جميل! ✨', hello: 'أهلًا! 👋', attack: 'هجوم! ⚔️',
@@ -127,7 +129,7 @@ const io = new Server(server, {
 const rooms = new Map();
 const playerRooms = new Map();
 
-app.get('/health', (_req, res) => res.json({ ok: true, game: 'Shardfall Arena', rooms: rooms.size }));
+app.get('/health', (_req, res) => res.json({ ok: true, game: 'Shardfall Arena v9', rooms: rooms.size }));
 app.post('/api/session', (req, res) => {
   const name = cleanName(req.body && req.body.name);
   const old = verifyToken(req.body && req.body.token);
@@ -141,7 +143,6 @@ app.post('/api/session', (req, res) => {
 app.get('/net-client.js', (_req, res) => res.sendFile(path.join(ROOT, 'net-client.js')));
 app.get('/net-client-04.js', (_req, res) => res.sendFile(path.join(ROOT, 'net-client-04.js')));
 app.get('/net-client-05.js', (_req, res) => res.sendFile(path.join(ROOT, 'net-client-05.js')));
-app.get('/health', (_req, res) => res.json({ ok: true, game: 'Shardfall Arena v9' }));
 app.get('/', (_req, res) => res.sendFile(path.join(ROOT, 'Shardfall_Arena_v9.html')));
 
 function makeCode() {
@@ -302,12 +303,18 @@ function ability(room, p, now) {
     }
   } else if (p.heroId === 'rift') {
     const ax = p.input.ax, az = p.input.az; p.x = clamp(p.x + ax * 6, -40, 40); p.z = clamp(p.z + az * 6, -40, 40);
+  } else if (p.heroId === 'madar') {
+    for (const q of room.players.values()) {
+      if (q.id === p.id || q.dead || q.disconnectedAt) continue;
+      const dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz) || 1;
+      if (d < 7 && (dx / d) * p.input.ax + (dz / d) * p.input.az > .2) applyDamage(room, p, q, 30, now, true);
+    }
   }
   const radius = p.heroId === 'rift' ? 4.15 : p.heroId === 'warden' ? 4.5 : p.heroId === 'nova' || p.heroId === 'star' ? 5.5 : p.heroId === 'prism' ? 3.2 : 2.8;
   for (const q of room.players.values()) {
     if (q.id === p.id || q.dead || q.disconnectedAt) continue;
     const d = Math.hypot(q.x - p.x, q.z - p.z);
-    if (d < radius && !['tank', 'max', 'trickster', 'edgar', 'mortis', 'sniper', 'colette', 'ember'].includes(p.heroId))
+    if (d < radius && !['tank', 'max', 'trickster', 'edgar', 'mortis', 'sniper', 'colette', 'ember', 'madar'].includes(p.heroId))
       applyDamage(room, p, q, p.heroId === 'rift' ? 42 : p.heroId === 'warden' ? 34 : p.heroId === 'nova' ? 46 : p.heroId === 'star' ? 42 : 24, now, true);
     if (room.status !== 'playing') break;
   }
@@ -363,6 +370,19 @@ function tickRoom(room) {
   }
 }
 
+const coop = createCoopService({
+  io,
+  heroes: HEROES,
+  isBusy: id => playerRooms.has(id),
+  onReward(playerId, tier, tokens) {
+    const profile = profiles[playerId] || (profiles[playerId] = { name: 'مقاتل', matches: 0, wins: 0, kills: 0, trophies: 0 });
+    profile.coopWins = (profile.coopWins || 0) + 1;
+    profile.bossTokens = (profile.bossTokens || 0) + tokens;
+    profile.bossTiers = [...new Set([...(profile.bossTiers || []), tier])].sort((a, b) => a - b);
+    saveProfiles();
+  }
+});
+
 io.use((socket, next) => {
   const session = verifyToken(socket.handshake.auth && socket.handshake.auth.token);
   if (!session) return next(new Error('الجلسة غير صالحة؛ أعد تسجيل الدخول كضيف.'));
@@ -379,8 +399,11 @@ io.on('connection', socket => {
     if (room.status === 'playing') socket.emit('match:started', { code: room.code, mapIndex: room.mapIndex, duration: Math.max(0, (room.endAt - Date.now()) / 1000), players: [...room.players.values()].map(publicPlayer) });
     emitLobby(room);
   }
+  coop.reconnect(socket);
+  coop.bind(socket);
 
   socket.on('match:join', (data = {}, ack = () => {}) => {
+    if (coop.isInSquad(id)) return ack({ error: 'أنت ضمن فريق تعاوني؛ اخرج منه قبل دخول مباراة أخرى.' });
     const name = cleanName(data.name || socket.data.playerName);
     const heroId = HEROES[data.heroId] ? data.heroId : 'balanced';
     let targetRoom;
